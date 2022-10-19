@@ -3470,6 +3470,7 @@ version = "3.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "cc",
  "clap 3.2.8",
  "component-macro-test",
  "component-test-util",

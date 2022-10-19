@@ -54,6 +54,17 @@ fn main() -> anyhow::Result<()> {
 
         writeln!(out, "}}")?;
     }
+    
+    // build helper.c
+    let mut build = cc::Build::new();
+    build.warnings(true);
+    let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+    let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    build.define(&format!("CFG_TARGET_OS_{}", os), None);
+    build.define(&format!("CFG_TARGET_ARCH_{}", arch), None);
+    println!("cargo:rerun-if-changed=src/commands/helper.c");
+    build.file("src/commands/helper.c");
+    build.compile("my-helpers");
 
     // Write out our auto-generated tests and opportunistically format them with
     // `rustfmt` if it's installed.

@@ -180,6 +180,8 @@ impl RunCommand {
         let mut linker = Linker::new(&engine);
         linker.allow_unknown_exports(self.allow_unknown_exports);
 
+        linker.func_wrap("env", "test_func", wrap_test_func)?;
+
         populate_with_wasi(
             &mut store,
             &mut linker,
@@ -545,4 +547,18 @@ fn ctx_set_listenfd(num_fd: usize, builder: WasiCtxBuilder) -> Result<(usize, Wa
     }
 
     Ok((num_fd, builder))
+}
+
+#[link(name = "my-helpers")]
+extern "C" {
+    fn test_func(ptr: *const u32, size: i32);
+}
+
+fn wrap_test_func(mut caller: wasmtime::Caller<'_, Host>, _ptr: u32, size: i32) {
+    let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+    let linear_memory: &[u8] = memory.data(&caller);
+    unsafe {
+        let ptr: *const u32 = linear_memory.as_ptr().add(_ptr as usize).cast();
+        test_func(ptr, size)
+    }
 }
