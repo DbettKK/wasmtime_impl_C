@@ -3,6 +3,7 @@
 use anyhow::{anyhow, bail, Context as _, Result};
 use clap::Parser;
 use once_cell::sync::Lazy;
+use std::any::Any;
 use std::fs::File;
 use std::io::Read;
 use std::thread;
@@ -180,7 +181,21 @@ impl RunCommand {
         let mut linker = Linker::new(&engine);
         linker.allow_unknown_exports(self.allow_unknown_exports);
 
-        linker.func_wrap("env", "test_func", wrap_test_func)?;
+        // linker.func_wrap("env", "test_func", wrap_test_func)?;
+        linker.func_wrap("env", "test_func", |mut caller: wasmtime::Caller<'_, Host>, _ptr: u32, size: u32| {
+            let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+            let my_realloc = caller.get_export("realloc").unwrap().into_func().unwrap().typed::<(u32, u32), u32, _>(&caller).unwrap();
+            
+            let res = my_realloc.call(&mut caller, (_ptr, size)).unwrap();
+            let linear_memory: &[u8] = memory.data(&caller);
+            unsafe {
+                let new_ptr: *const u32 = linear_memory.as_ptr().add(res as usize).cast();
+                let ret_ptr: *const u8 = test_func(new_ptr, size).cast();
+                ret_ptr.offset_from(linear_memory.as_ptr()) as u32
+            }   
+            //
+        })?;
+
 
         populate_with_wasi(
             &mut store,
@@ -318,6 +333,10 @@ impl RunCommand {
 
         // Read the wasm module binary either as `*.wat` or a raw binary.
         let module = self.load_module(linker.engine(), &self.module)?;
+
+        //let instance = linker.instantiate(&mut *store, &module)?;
+        //let my_realloc = instance.get_typed_func::<(u32, u32), u32, _>(&mut *store, "realloc").unwrap();
+
         // The main module might be allowed to have unknown imports, which
         // should be defined as traps:
         if self.trap_unknown_imports {
@@ -551,14 +570,17 @@ fn ctx_set_listenfd(num_fd: usize, builder: WasiCtxBuilder) -> Result<(usize, Wa
 
 #[link(name = "my-helpers")]
 extern "C" {
-    fn test_func(ptr: *const u32, size: i32);
+    fn test_func(ptr: *const u32, size: u32) -> *const u32;
 }
 
-fn wrap_test_func(mut caller: wasmtime::Caller<'_, Host>, _ptr: u32, size: i32) {
-    let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
-    let linear_memory: &[u8] = memory.data(&caller);
-    unsafe {
-        let ptr: *const u32 = linear_memory.as_ptr().add(_ptr as usize).cast();
-        test_func(ptr, size)
-    }
-}
+// fn wrap_test_func(mut caller: wasmtime::Caller<'_, Host>, _ptr: u32, size: u32) {
+//     let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+//     let linear_memory: &[u8] = memory.data(&caller);
+    
+//     unsafe {
+//         let ptr: *const u32 = linear_memory.as_ptr().add(_ptr as usize).cast();
+//         test_func(ptr, size)
+//     }
+// }
+
+
