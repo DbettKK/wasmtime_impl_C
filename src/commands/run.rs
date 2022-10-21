@@ -182,18 +182,19 @@ impl RunCommand {
         linker.allow_unknown_exports(self.allow_unknown_exports);
 
         // linker.func_wrap("env", "test_func", wrap_test_func)?;
+        
+
         linker.func_wrap("env", "test_func", |mut caller: wasmtime::Caller<'_, Host>, _ptr: u32, size: u32| {
             let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
-            let my_realloc = caller.get_export("realloc").unwrap().into_func().unwrap().typed::<(u32, u32), u32, _>(&caller).unwrap();
-            
-            let res = my_realloc.call(&mut caller, (_ptr, size)).unwrap();
-            let linear_memory: &[u8] = memory.data(&caller);
+            //let my_realloc = caller.get_export("realloc").unwrap().into_func().unwrap().typed::<(u32, u32), u32, _>(&caller).unwrap();
+            let linear_memory = memory.data(&caller).as_ptr();
             unsafe {
-                let new_ptr: *const u32 = linear_memory.as_ptr().add(res as usize).cast();
-                let ret_ptr: *const u8 = test_func(new_ptr, size).cast();
-                ret_ptr.offset_from(linear_memory.as_ptr()) as u32
+                register_my_realloc(wasmtime_realloc, &mut WasmtimeCtx {caller: &mut caller} as *mut WasmtimeCtx);
+                register_my_malloc(wasmtime_malloc, &mut WasmtimeCtx {caller: &mut caller} as *mut WasmtimeCtx);  
+                let ptr: *const u32 = linear_memory.add(_ptr as usize).cast();
+                let ret_ptr: *const u8 = test_func(ptr, size).cast();
+                ret_ptr.offset_from(linear_memory) as u32
             }   
-            //
         })?;
 
 
@@ -568,10 +569,52 @@ fn ctx_set_listenfd(num_fd: usize, builder: WasiCtxBuilder) -> Result<(usize, Wa
     Ok((num_fd, builder))
 }
 
+#[repr(C)]
+struct JSMallocState {
+    malloc_count: u32,
+    malloc_size: u32,
+    malloc_limit: u32,
+    opaque: *const libc::c_void
+}
+
+#[repr(C)]
+struct WasmtimeCtx<'a> {
+    pub caller: *mut wasmtime::Caller<'a, Host>
+}
+
 #[link(name = "my-helpers")]
 extern "C" {
     fn test_func(ptr: *const u32, size: u32) -> *const u32;
+    fn register_my_realloc(re: extern fn(*const libc::c_void, u32, *mut WasmtimeCtx) -> *const libc::c_void, ctx: *mut WasmtimeCtx);
+    fn register_my_malloc(re: extern fn(u32, *mut WasmtimeCtx) -> *const libc::c_void, ctx: *mut WasmtimeCtx);
 }
+
+extern fn wasmtime_realloc(ptr: *const libc::c_void, size: u32, ctx: *mut WasmtimeCtx) -> *const libc::c_void {
+    unsafe {
+        let caller = (*ctx).caller;
+        let memory = (*caller).get_export("memory").unwrap().into_memory().unwrap();
+        let my_realloc = (*caller).get_export("realloc").unwrap().into_func().unwrap().typed::<(u32, u32), u32, _>(&*caller).unwrap();
+
+        let linear_memory = memory.data(&*caller).as_ptr();
+        let ptr: *const u8 = ptr.cast();
+        let ptr_offset = ptr.offset_from(linear_memory) as u32;
+        let res = my_realloc.call(&mut *caller, (ptr_offset, size)).unwrap();
+        linear_memory.add(res as usize).cast()
+    }
+}
+
+extern fn wasmtime_malloc(size: u32, ctx: *mut WasmtimeCtx) -> *const libc::c_void {
+    unsafe {
+        let caller = (*ctx).caller;
+        let memory = (*caller).get_export("memory").unwrap().into_memory().unwrap();
+        let my_malloc = (*(*ctx).caller).get_export("malloc").unwrap().into_func().unwrap().typed::<u32, u32, _>(&*caller).unwrap();
+
+        let linear_memory = memory.data(&*caller).as_ptr();
+        let res = my_malloc.call(&mut *caller, size).unwrap();
+        linear_memory.add(res as usize).cast()
+    }
+}
+
 
 // fn wrap_test_func(mut caller: wasmtime::Caller<'_, Host>, _ptr: u32, size: u32) {
 //     let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
