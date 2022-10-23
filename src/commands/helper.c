@@ -42,3 +42,91 @@ int* test_func(int *ptr, int size) {
     printf("%d\n", ptr[1]);
     return ptr;
 }
+
+// ========= test2 ============ //
+
+typedef struct {
+    void* trans;
+} TransTrans;
+
+typedef struct {
+    char *no_trans;
+    char *name;
+    int age;
+} Trans;
+
+void func2(void *trans) {
+    Trans* t = trans;
+    printf("host name: %s\n", t->name);
+    printf("host age: %d\n", t->age);
+}
+
+void test2_func(TransTrans *tt) {
+    func2(tt->trans);
+}
+
+// ========= test3 ============ //
+typedef struct {
+    char *name;
+    int age;
+} Son;
+
+typedef struct  {
+    Son son;
+} Father;
+
+void test3_func(Father f) {
+    printf("name: %s\n", f.son.name);
+    printf("age: %d\n", f.son.age);
+}
+
+// ======= test4 ======= // 
+typedef struct {
+    char *name;
+    int age;
+    void *buf[0];
+} ChangeLen;
+
+void test4_func(ChangeLen *c) {
+    printf("name: %s\n", c->name);
+    printf("age: %d\n", c->age);
+    for (int i = 0; i < 4; i++) {
+        char m = c->buf[i];
+        printf("buffer: %c\n", m);
+    }
+}
+
+// ==== test5 ==== //
+struct DoubleList {
+    struct DoubleList *prev, *next;
+    int val;
+};
+typedef struct DoubleList DoubleList;
+
+void test5_func(DoubleList *d) {
+    printf("%d\n", d->val);
+    printf("%d\n", d->prev->val);
+    printf("%d\n", d->next->val);
+    printf("%d\n", d->prev->prev->val);
+    printf("%d\n", d->next->next->val);
+}
+
+// ==== test6 ==== //
+typedef struct {
+    int (*add)(int, int);
+    void* (*my_malloc)(size_t);
+} FuncPointer;
+
+typedef struct {
+    FuncPointer fp;
+} FuncParam;
+
+void test6_func(FuncParam fp) {
+    printf("%d\n", fp.fp.add(1, 2));
+    int *p = fp.fp.my_malloc(6);
+    printf("%d\n", p[1]);
+}
+
+void test6_func_2(int (*add)(int a, int b)) {
+    printf("%d\n", add(1, 2));
+}
