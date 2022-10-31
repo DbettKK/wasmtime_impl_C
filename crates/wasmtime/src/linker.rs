@@ -6,6 +6,7 @@ use crate::{
     IntoFunc, Module, StoreContextMut, Trap, Val, ValRaw,
 };
 use anyhow::{anyhow, bail, Context, Result};
+use libc::c_void;
 use log::warn;
 use std::collections::hash_map::{Entry, HashMap};
 #[cfg(feature = "async")]
@@ -688,8 +689,6 @@ impl<T> Linker<T> {
         // `HostFunc::to_func` method anyway. This is placed earlier for this
         // function though to prevent the functions created here from delaying
         // the panic until they're called.
-
-        use std::result;
         assert!(
             Engine::same(&self.engine, store.as_context().engine()),
             "different engines for this linker and the store provided"
@@ -707,14 +706,13 @@ impl<T> Linker<T> {
                             move |mut caller, params, results| {
                                 // Create a new instance for this command execution.
                                 let instance = instance_pre.instantiate(&mut caller)?;
-                                
-                                // ===== //
+                        
                                 unsafe {
                                     get_linear_memory(instance.get_memory(&mut caller, "memory").unwrap()
                                             .data_mut(&mut caller).as_mut_ptr());
                                 }
 
-                                let my_malloc = instance.get_func(&mut caller, "malloc").unwrap()
+                                let my_malloc = instance.get_func(&mut caller, "my_malloc").unwrap()
                                         .typed::<u32, u32, _>(&caller).unwrap();
 
                                 let mut closure = |size: u32| -> *mut libc::c_void {
@@ -729,30 +727,47 @@ impl<T> Linker<T> {
                                     register_malloc(get_wasm_malloc(&closure), &mut closure as *mut _ as *mut libc::c_void);
                                 }
 
-                                let mut md_age_closure = |table_index: i32, state: i32, new_age: i32|{
-                                    let val = instance.get_table(&mut caller, "__indirect_function_table")
-                                                        .unwrap().get(&mut caller, table_index as u32)
-                                                        .unwrap();
-                                    let f = val.funcref().unwrap().unwrap()
-                                                      .typed::<(i32, i32), (), _>(&mut caller).unwrap();
-                                    f.call(&mut caller, (state, new_age)).unwrap();
+                                let my_free = instance.get_func(&mut caller, "my_free").unwrap()
+                                        .typed::<i32, (), _>(&caller).unwrap();
+
+                                let mut free_c = |ptr: *mut c_void| {
+                                    let linear_memory = instance.get_memory(&mut caller, "memory").unwrap()
+                                            .data_mut(&mut caller).as_mut_ptr();
+                                    unsafe {
+                                        let ptr_offset = (ptr as *mut u8).offset_from(linear_memory) as i32;
+                                        my_free.call(&mut caller, ptr_offset).unwrap();
+                                    }
                                 };
+
                                 unsafe {
-                                    register_modify_age(get_wasm_modify_age(&md_age_closure), &mut md_age_closure as *mut _ as *mut libc::c_void);
+                                    register_free(get_wasm_free(&free_c), &mut free_c as *mut _ as *mut c_void);
                                 }
-                                let mut md_name_closure = |table_index: i32, state: i32, new_name: i32| -> i32 {
-                                    let val = instance.get_table(&mut caller, "__indirect_function_table")
-                                                        .unwrap().get(&mut caller, table_index as u32)
-                                                        .unwrap();
-                                    let f = val.funcref().unwrap().unwrap()
-                                                      .typed::<(i32, i32), i32, _>(&mut caller).unwrap();
-                                    let ret = f.call(&mut caller, (state, new_name)).unwrap();
+
+                                let lre_case_conv = instance.get_func(&mut caller, "lre_case_conv").unwrap()
+                                        .typed::<(i32, u32, i32), i32, _>(&caller).unwrap();
+                                
+                                let mut lre_case_conv_closure = |res: i32, c: u32, conv_type: i32| -> i32 {
+                                    let ret = lre_case_conv.call(&mut caller, (res, c, conv_type)).unwrap();
                                     ret
                                 };
                                 unsafe {
-                                    register_modify_name(get_wasm_modify_name(&md_name_closure), &mut md_name_closure as *mut _ as *mut libc::c_void);
+                                    register_wasm_lre_case_conv(get_wasm_lre_case_conv(&lre_case_conv_closure), 
+                                            &mut lre_case_conv_closure as *mut _ as *mut libc::c_void);
                                 }
-                                // ===== //
+
+                                let mut realloc_closure = |table_index: i32, state: i32, ptr: i32, size: u32| -> i32 {
+                                    let val = instance.get_table(&mut caller, "__indirect_function_table")
+                                                        .unwrap().get(&mut caller, table_index as u32)
+                                                        .unwrap();
+                                    let f = val.funcref().unwrap().unwrap()
+                                                      .typed::<(i32, i32, u32), i32, _>(&mut caller).unwrap();
+                                    let ret = f.call(&mut caller, (state, ptr, size)).unwrap();
+                                    ret
+                                };
+                                unsafe {
+                                    register_wasm_js_realloc(get_wasm_js_realloc(&mut realloc_closure), 
+                                        &mut realloc_closure as *mut _ as *mut c_void);
+                                }
 
                                 // `unwrap()` everything here because we know the instance contains a
                                 // function export with the given name and signature because we're
@@ -773,6 +788,7 @@ impl<T> Linker<T> {
             }
             ModuleKind::Reactor => {
                 let instance = self.instantiate(&mut store, &module)?;
+
                 if let Some(export) = instance.get_export(&mut store, "_initialize") {
                     if let Extern::Func(func) = export {
                         func.typed::<(), (), _>(&store)
@@ -1344,16 +1360,14 @@ impl ModuleKind {
     }
 }
 
-use libc::c_void;
-
 #[link(name = "my-helpers")]
 #[allow(improper_ctypes)]
 extern "C" {
     fn get_linear_memory(mem: *mut u8);
     fn register_malloc(f: extern "C" fn (u32, *mut c_void) -> *mut c_void, mc: *mut c_void);
-    fn register_modify_age(f: extern "C" fn(i32, i32, i32, *mut c_void), fc: *mut c_void);
-    fn register_modify_name(f: extern "C" fn(i32, i32, i32, *mut c_void) -> i32, fc: *mut c_void);
+    fn register_free(f: extern "C" fn(*mut c_void, *mut c_void), c: *mut c_void);
 }
+
 
 extern "C" fn wasm_malloc<F>(size: u32, closure: *mut c_void) -> *mut c_void 
 where F: FnMut(u32) -> *mut c_void{
@@ -1369,28 +1383,54 @@ where F: FnMut(u32) -> *mut c_void
     wasm_malloc::<F>
 }
 
-extern "C" fn wasm_modfify_age<F>(offset: i32, state: i32, new_age: i32, closure: *mut c_void)
-where F: FnMut(i32, i32, i32) {
+extern "C" fn wasm_free<F>(ptr: *mut c_void, closure: *mut c_void)
+where F: FnMut(*mut c_void) {
     unsafe {
         let cl = &mut *(closure as *mut F);
-        cl(offset, state, new_age)
+        cl(ptr)
     }
 }
 
-fn get_wasm_modify_age<F>(_closure: &F) -> extern "C" fn(i32, i32, i32, *mut c_void)
-where F: FnMut(i32, i32, i32) {
-    wasm_modfify_age::<F>
+fn get_wasm_free<F>(_closure: &F) -> extern "C" fn (*mut c_void, *mut c_void)
+where F: FnMut(*mut c_void) {
+    wasm_free::<F>
 }
 
-extern "C" fn wasm_modfify_name<F>(offset: i32, state: i32, new_age: i32, closure: *mut c_void) -> i32
-where F: FnMut(i32, i32, i32) -> i32 {
+// == relative == //
+
+extern "C" {
+    fn register_wasm_js_realloc(
+        f: extern "C" fn(i32, i32, i32, u32, *mut c_void) -> i32,  
+        cl: *mut c_void
+    );
+    fn register_wasm_lre_case_conv(
+        f: extern "C" fn(i32, u32, i32, *mut c_void) -> i32,
+        cl: *mut c_void
+    );
+}
+
+extern "C" fn wasm_js_realloc<F>(table_index: i32, state: i32, ptr: i32, size: u32, closure: *mut c_void) -> i32 
+where F: FnMut(i32, i32, i32, u32) -> i32 {
     unsafe {
         let cl = &mut *(closure as *mut F);
-        cl(offset, state, new_age)
+        cl(table_index, state, ptr, size)
     }
 }
 
-fn get_wasm_modify_name<F>(_closure: &F) -> extern "C" fn(i32, i32, i32, *mut c_void) -> i32
-where F: FnMut(i32, i32, i32) -> i32 {
-    wasm_modfify_name::<F>
+fn get_wasm_js_realloc<F>(_closure: &F) -> extern "C" fn(i32, i32, i32, u32, *mut c_void) -> i32
+where F: FnMut(i32, i32, i32, u32) -> i32 {
+    wasm_js_realloc::<F>
+}
+
+extern "C" fn wasm_lre_case_conv<F>(res: i32, c: u32, conv_type: i32, closure: *mut c_void) -> i32 
+where F: FnMut(i32, u32, i32) -> i32 {
+    unsafe {
+        let cl = &mut *(closure as *mut F);
+        cl(res, c, conv_type)
+    }
+}
+
+fn get_wasm_lre_case_conv<F>(_closure: &F) -> extern "C" fn(i32, u32, i32, *mut c_void) -> i32
+where F: FnMut(i32, u32, i32) -> i32 {
+    wasm_lre_case_conv::<F>
 }

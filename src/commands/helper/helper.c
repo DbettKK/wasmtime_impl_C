@@ -28,8 +28,9 @@ void register_malloc(wasm_malloc func, void* mc) {
 void register_realloc(wasm_realloc func) {
     glob_realloc = func;
 }
-void register_free(wasm_free func) { 
+void register_free(wasm_free func, void* fc) { 
     glob_free = func;
+    free_cl = fc;
 }
 
 void* my_malloc(size_t size) {
@@ -41,5 +42,6 @@ void* my_realloc(void* ptr, size_t size) {
 }
 
 void my_free(void* ptr) {
-    return glob_free(ptr, glob_ctx);
+    return glob_free(ptr, free_cl);
 }
+

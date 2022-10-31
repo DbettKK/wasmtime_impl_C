@@ -54,20 +54,22 @@ fn main() -> anyhow::Result<()> {
 
         writeln!(out, "}}")?;
     }
-    
-    // build helper.c
+
+    // build my-helpers
     let mut build = cc::Build::new();
     build.warnings(false);
     let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
     let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     build.define(&format!("CFG_TARGET_OS_{}", os), None);
     build.define(&format!("CFG_TARGET_ARCH_{}", arch), None);
-    let files = ["helper.c", "helper_funcpointer.c", "helper_callfunc.c", "helper_struct.c"];
+    let files = ["helper.c", "lre_exec_backtrack.c"];
     for f in files {
         build.file("src/commands/helper/".to_string() + f);
         println!("{}", "cargo:rerun-if-changed=src/commands/helper/".to_string() + f);
     }
     println!("{}", "cargo:rerun-if-changed=src/commands/helper/".to_string() + "helper.h");
+    println!("{}", "cargo:rerun-if-changed=src/commands/helper/".to_string() + "quickjs.h");
+    println!("{}", "cargo:rerun-if-changed=src/commands/helper/".to_string() + "lre_exec_backtrack.h");
     build.include("src/commands/helper/");
     build.compile("my-helpers");
 

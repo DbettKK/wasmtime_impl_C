@@ -2,9 +2,7 @@
 
 use anyhow::{anyhow, bail, Context as _, Result};
 use clap::Parser;
-use libc::c_void;
 use once_cell::sync::Lazy;
-use std::any::Any;
 use std::fs::File;
 use std::io::Read;
 use std::thread;
@@ -14,7 +12,7 @@ use std::{
     path::{Component, Path, PathBuf},
     process,
 };
-use wasmtime::{Engine, Func, Linker, Module, Store, Trap, Val, ValType, Caller};
+use wasmtime::{Engine, Func, Linker, Module, Store, Trap, Val, ValType};
 use wasmtime_cli_flags::{CommonOptions, WasiModules};
 use wasmtime_wasi::sync::{ambient_authority, Dir, TcpListener, WasiCtxBuilder};
 
@@ -182,9 +180,9 @@ impl RunCommand {
         let mut linker = Linker::new(&engine);
         linker.allow_unknown_exports(self.allow_unknown_exports);
 
-        linker.func_wrap("env", "modify_fp", wrap_modify_fp)?;
-        linker.func_wrap("env", "modify", wrap_modify)?;
-        linker.func_wrap("env", "check_struct", wrap_check_struct)?;
+        linker.func_wrap("env", "my_lre_realloc", wrap_my_lre_realloc)?;
+        linker.func_wrap("env", "my_push_state", wrap_my_push_state)?;
+        linker.func_wrap("env", "lre_canonicalize", wrap_lre_canonicalize)?;
 
         populate_with_wasi(
             &mut store,
@@ -322,25 +320,6 @@ impl RunCommand {
 
         // Read the wasm module binary either as `*.wat` or a raw binary.
         let module = self.load_module(linker.engine(), &self.module)?;
-
-        // linker.func_wrap("env", "modify_fp", wrap_modify_fp)?;
-
-        // let instance = linker.instantiate(&mut *store, &module)?;
-
-        // let my_malloc = instance.get_typed_func::<u32, u32, _>(&mut *store, "malloc").unwrap();
-        // let mut closure = |size: u32| -> *mut c_void {
-        //     let ret = my_malloc.call(&mut *store, size).unwrap();
-        //     let linear_memory = instance.get_memory(&mut *store, "memory").unwrap().data_mut(&mut *store).as_mut_ptr();
-        //     unsafe {
-        //         linear_memory.add(ret as usize).cast()
-        //     }
-        // };
-        // unsafe {
-        //     register_malloc(get_wasm_malloc(&closure), &mut closure as *mut _ as *mut c_void);
-        //     get_linear_memory(instance.get_memory(&mut *store, "memory").unwrap().data_mut(&mut *store).as_mut_ptr());
-        // }
-
-
         // The main module might be allowed to have unknown imports, which
         // should be defined as traps:
         if self.trap_unknown_imports {
@@ -572,118 +551,44 @@ fn ctx_set_listenfd(num_fd: usize, builder: WasiCtxBuilder) -> Result<(usize, Wa
     Ok((num_fd, builder))
 }
 
-// ==== register==== // 
-#[link(name = "my-helpers")]
-#[allow(improper_ctypes)]
 extern "C" {
-    fn get_linear_memory(mem: *mut u8);
-    fn register_ctx(ctx: *mut c_void);
-    fn register_malloc(f: extern "C" fn (u32, *mut c_void) -> *mut c_void, mc: *mut c_void);
-    fn register_realloc(f: extern "C" fn (*mut c_void, u32, *mut c_void) -> *mut c_void);
-    fn register_free(f: extern "C" fn (*mut c_void, *mut c_void));
+    fn my_lre_realloc(mf: i32, state: i32, ptr: i32, size: u32) -> i32;
+    fn push_state(mf: i32, state: i32, s: i32, 
+        capture_wasm: i32,
+        stack_wasm: i32,
+        stack_len: u32,
+        pc_wasm: i32, 
+        cptr_wasm: i32,
+        t: i32,
+        count: u32) -> i32;
+    fn lre_canonicalize(c: u32, is_utf16: i32) -> u32;
 }
 
-fn wrap_get_linear_memory(mut caller: Caller<'_, Host>) {
-    println!("{:?}", &mut caller as *mut Caller<'_, Host>);
-    let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
-    let linear_memory = memory.data_mut(&mut caller).as_mut_ptr();
+fn wrap_my_lre_realloc(mf: i32, state: i32, ptr: i32, size: u32) -> i32 {
     unsafe {
-        get_linear_memory(linear_memory)
+        my_lre_realloc(mf, state, ptr, size)
     }
 }
 
-fn wrap_init_memfuncs(mut caller: Caller<'_, Host>) {
-    println!("{:?}", &mut caller as *mut Caller<'_, Host>);
+fn wrap_my_push_state(
+    mf: i32, 
+    state: i32, 
+    s: i32, 
+    capture_wasm: i32,
+    stack_wasm: i32,
+    stack_len: u32,
+    pc_wasm: i32, 
+    cptr_wasm: i32,
+    t: i32,
+    count: u32
+) -> i32 {
     unsafe {
-        //register_malloc(wasm_malloc);
-        register_realloc(wasm_realloc);
-        register_free(wasm_free);
-        register_ctx(&mut caller as *mut _ as *mut c_void);
+        push_state(mf, state, s, capture_wasm, stack_wasm, stack_len, pc_wasm, cptr_wasm, t, count)
     }
 }
 
-extern "C" fn wasm_malloc<F>(size: u32, closure: *mut c_void) -> *mut c_void 
-where F: FnMut(u32) -> *mut c_void{
+fn wrap_lre_canonicalize(c: u32, is_utf16: i32) -> u32 {
     unsafe {
-        let cl = &mut *(closure as *mut F);
-        cl(size)
+        lre_canonicalize(c, is_utf16)
     }
 }
-
-fn get_wasm_malloc<F>(_closure: &F) -> extern "C" fn (u32, *mut c_void) -> *mut c_void
-where F: FnMut(u32) -> *mut c_void
-{
-    wasm_malloc::<F>
-}
-
-extern "C" fn wasm_realloc(ptr: *mut c_void, size: u32, ctx: *mut c_void) -> *mut c_void {
-    unsafe {
-        let caller: *mut Caller<'_, Host> = ctx.cast();
-        let linear_memory = (*caller).get_export("memory").unwrap()
-                    .into_memory().unwrap().data_mut(&mut *caller).as_mut_ptr();
-        let f = (*caller).get_export("my_realloc").unwrap()
-                    .into_func().unwrap()
-                    .typed::<(u32, u32), u32, _>(&*caller).unwrap();
-        let ptr_offset = (ptr as *mut u8).offset_from(linear_memory) as u32;
-        let ret = f.call(&mut *caller, (ptr_offset, size)).unwrap();
-        linear_memory.add(ret as usize).cast()
-    }
-}
-
-extern "C" fn wasm_free(ptr: *mut c_void, ctx: *mut c_void) {
-    unsafe {
-        let caller: *mut Caller<'_, Host> = ctx.cast();
-        let linear_memory = (*caller).get_export("memory").unwrap()
-                    .into_memory().unwrap().data_mut(&mut *caller).as_mut_ptr();
-        let f = (*caller).get_export("my_realloc").unwrap()
-                    .into_func().unwrap()
-                    .typed::<u32, (), _>(&*caller).unwrap();
-        let ptr_offset = (ptr as *mut u8).offset_from(linear_memory) as u32;
-        f.call(&mut *caller, ptr_offset).unwrap();
-    }
-}
-
-// === //
-#[repr(C)]
-struct FuncPointer {
-    name: i32,
-    add: i32,
-}
-
-#[link(name = "my-helpers")]
-extern "C" {   
-    fn modify_fp(fp: u32);
-}
-
-fn wrap_modify_fp(mut caller: Caller<'_, Host>, _fp: u32) {
-    let linear_memory = caller.get_export("memory").unwrap().into_memory().unwrap().data_mut(&mut caller).as_mut_ptr();
-    unsafe {
-        let fp: *mut FuncPointer = linear_memory.add(_fp as usize).cast();
-        modify_fp(_fp)
-    }
-}
-// === //
-#[link(name = "my-helpers")]
-extern "C" {   
-    fn modify(op: i32, new_name: i32) -> i32;
-}
-
-fn wrap_modify(mut caller: Caller<'_, Host>, op: i32, new_name: i32) -> i32 {
-    unsafe {
-        modify(op, new_name)
-    }
-}
-// === //
-#[link(name = "my-helpers")]
-extern "C" {   
-    fn check_struct(c: i32);
-}
-
-fn wrap_check_struct(mut caller: Caller<'_, Host>, c: i32){
-    unsafe {
-        check_struct(c)
-    }
-}
-
-
-
