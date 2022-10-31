@@ -706,7 +706,6 @@ impl<T> Linker<T> {
                             move |mut caller, params, results| {
                                 // Create a new instance for this command execution.
                                 let instance = instance_pre.instantiate(&mut caller)?;
-                        
                                 unsafe {
                                     // 将linear_memory对应的基地址传递给helper
                                     get_linear_memory(instance.get_memory(&mut caller, "memory").unwrap()
@@ -729,10 +728,9 @@ impl<T> Linker<T> {
                                     register_malloc(get_wasm_malloc(&closure), &mut closure as *mut _ as *mut libc::c_void);
                                 }
 
-                                let my_free = instance.get_func(&mut caller, "my_free").unwrap()
-                                        .typed::<i32, (), _>(&caller).unwrap();
-
                                 let mut free_c = |ptr: *mut c_void| {
+                                    let my_free = instance.get_func(&mut caller, "my_free").unwrap()
+                                        .typed::<i32, (), _>(&caller).unwrap();
                                     let linear_memory = instance.get_memory(&mut caller, "memory").unwrap()
                                             .data_mut(&mut caller).as_mut_ptr();
                                     unsafe {
@@ -744,11 +742,10 @@ impl<T> Linker<T> {
                                 unsafe {
                                     register_free(get_wasm_free(&free_c), &mut free_c as *mut _ as *mut c_void);
                                 }
-
-                                let lre_case_conv = instance.get_func(&mut caller, "lre_case_conv").unwrap()
-                                        .typed::<(i32, u32, i32), i32, _>(&caller).unwrap();
                                 
                                 let mut lre_case_conv_closure = |res: i32, c: u32, conv_type: i32| -> i32 {
+                                    let lre_case_conv = instance.get_func(&mut caller, "lre_case_conv").unwrap()
+                                        .typed::<(i32, u32, i32), i32, _>(&caller).unwrap();
                                     let ret = lre_case_conv.call(&mut caller, (res, c, conv_type)).unwrap();
                                     ret
                                 };

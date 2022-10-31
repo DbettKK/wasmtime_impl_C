@@ -12,9 +12,10 @@ fn main() {
     // frequently then all rustdoc attributes also need to be updated with the
     // new condition to ensure the documentation accurately reflects when an API
     // is available.
-    if cfg!(feature = "cranelift") {
-        println!("cargo:rustc-cfg=compiler");
-    }
+    println!("cargo:rustc-cfg=compiler");
+    // if cfg!(feature = "cranelift") {
+    //     println!("cargo:rustc-cfg=compiler");
+    // }
 
     println!("cargo:rerun-if-changed=build.rs");
 }
