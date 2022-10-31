@@ -708,14 +708,15 @@ impl<T> Linker<T> {
                                 let instance = instance_pre.instantiate(&mut caller)?;
                         
                                 unsafe {
+                                    // 将linear_memory对应的基地址传递给helper
                                     get_linear_memory(instance.get_memory(&mut caller, "memory").unwrap()
                                             .data_mut(&mut caller).as_mut_ptr());
                                 }
 
-                                let my_malloc = instance.get_func(&mut caller, "my_malloc").unwrap()
+                                // 定义闭包调用函数
+                                let mut closure = |size: u32| -> *mut c_void {
+                                    let my_malloc = instance.get_func(&mut caller, "my_malloc").unwrap()
                                         .typed::<u32, u32, _>(&caller).unwrap();
-
-                                let mut closure = |size: u32| -> *mut libc::c_void {
                                     let ret = my_malloc.call(&mut caller, size).unwrap();
                                     let linear_memory = instance.get_memory(&mut caller, "memory").unwrap()
                                             .data_mut(&mut caller).as_mut_ptr();
@@ -723,6 +724,7 @@ impl<T> Linker<T> {
                                         linear_memory.add(ret as usize).cast()
                                     }
                                 };
+                                // 将闭包注册到helper中
                                 unsafe {
                                     register_malloc(get_wasm_malloc(&closure), &mut closure as *mut _ as *mut libc::c_void);
                                 }
@@ -1364,7 +1366,7 @@ impl ModuleKind {
 #[allow(improper_ctypes)]
 extern "C" {
     fn get_linear_memory(mem: *mut u8);
-    fn register_malloc(f: extern "C" fn (u32, *mut c_void) -> *mut c_void, mc: *mut c_void);
+    fn register_malloc(f: extern "C" fn (u32, *mut c_void) -> *mut c_void, c: *mut c_void);
     fn register_free(f: extern "C" fn(*mut c_void, *mut c_void), c: *mut c_void);
 }
 
@@ -1380,6 +1382,7 @@ where F: FnMut(u32) -> *mut c_void{
 fn get_wasm_malloc<F>(_closure: &F) -> extern "C" fn (u32, *mut c_void) -> *mut c_void
 where F: FnMut(u32) -> *mut c_void
 {
+    // turbofish 绑定类型参数
     wasm_malloc::<F>
 }
 

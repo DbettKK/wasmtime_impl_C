@@ -34,7 +34,10 @@ void md_age_def(State *s, int md_age) {
 int main() {
     Modify *md = malloc(sizeof(Modify));
     State s = { .name = "Tom", .age = 13 };
-    FuncPointer fp = { .modify_get_name = md_name_def, .modfify_age = md_age_def };
+    FuncPointer fp = { 
+        .modify_get_name = md_name_def, 
+        .modfify_age = md_age_def 
+    };
     md->s = s;
     md->fp = fp;
 
