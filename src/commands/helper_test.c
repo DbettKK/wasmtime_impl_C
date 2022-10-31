@@ -113,20 +113,31 @@ void test5_func(DoubleList *d) {
 
 // ==== test6 ==== //
 typedef struct {
-    int (*add)(int, int);
-    void* (*my_malloc)(size_t);
+    int i[32];
+    char *name;
+} Name;
+
+typedef struct {
+    int (*add)(int, int, void*);
+    void* add_closre;
+    void* (*my_malloc)(size_t, void*);
+    void* my_malloc_closure;
 } FuncPointer;
 
 typedef struct {
+    Name name;
     FuncPointer fp;
 } FuncParam;
 
-void test6_func(FuncParam fp) {
-    printf("%d\n", fp.fp.add(1, 2));
-    int *p = fp.fp.my_malloc(6);
+void test6_func(void *op) {
+    FuncParam *fp = op;
+    printf("%d\n", fp->fp.add(1, 2, fp->fp.add_closre));
+    int *p = fp->fp.my_malloc(6, fp->fp.my_malloc_closure);
     printf("%d\n", p[1]);
 }
 
-void test6_func_2(int (*add)(int a, int b)) {
-    printf("%d\n", add(1, 2));
+typedef int (*callback)(int, int, void*);
+
+void test6_func_2(callback c, void* closure) {
+    printf("%d\n", c(1, 5, closure));
 }

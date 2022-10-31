@@ -688,6 +688,8 @@ impl<T> Linker<T> {
         // `HostFunc::to_func` method anyway. This is placed earlier for this
         // function though to prevent the functions created here from delaying
         // the panic until they're called.
+
+        use std::result;
         assert!(
             Engine::same(&self.engine, store.as_context().engine()),
             "different engines for this linker and the store provided"
@@ -705,6 +707,52 @@ impl<T> Linker<T> {
                             move |mut caller, params, results| {
                                 // Create a new instance for this command execution.
                                 let instance = instance_pre.instantiate(&mut caller)?;
+                                
+                                // ===== //
+                                unsafe {
+                                    get_linear_memory(instance.get_memory(&mut caller, "memory").unwrap()
+                                            .data_mut(&mut caller).as_mut_ptr());
+                                }
+
+                                let my_malloc = instance.get_func(&mut caller, "malloc").unwrap()
+                                        .typed::<u32, u32, _>(&caller).unwrap();
+
+                                let mut closure = |size: u32| -> *mut libc::c_void {
+                                    let ret = my_malloc.call(&mut caller, size).unwrap();
+                                    let linear_memory = instance.get_memory(&mut caller, "memory").unwrap()
+                                            .data_mut(&mut caller).as_mut_ptr();
+                                    unsafe {
+                                        linear_memory.add(ret as usize).cast()
+                                    }
+                                };
+                                unsafe {
+                                    register_malloc(get_wasm_malloc(&closure), &mut closure as *mut _ as *mut libc::c_void);
+                                }
+
+                                let mut md_age_closure = |table_index: i32, state: i32, new_age: i32|{
+                                    let val = instance.get_table(&mut caller, "__indirect_function_table")
+                                                        .unwrap().get(&mut caller, table_index as u32)
+                                                        .unwrap();
+                                    let f = val.funcref().unwrap().unwrap()
+                                                      .typed::<(i32, i32), (), _>(&mut caller).unwrap();
+                                    f.call(&mut caller, (state, new_age)).unwrap();
+                                };
+                                unsafe {
+                                    register_modify_age(get_wasm_modify_age(&md_age_closure), &mut md_age_closure as *mut _ as *mut libc::c_void);
+                                }
+                                let mut md_name_closure = |table_index: i32, state: i32, new_name: i32| -> i32 {
+                                    let val = instance.get_table(&mut caller, "__indirect_function_table")
+                                                        .unwrap().get(&mut caller, table_index as u32)
+                                                        .unwrap();
+                                    let f = val.funcref().unwrap().unwrap()
+                                                      .typed::<(i32, i32), i32, _>(&mut caller).unwrap();
+                                    let ret = f.call(&mut caller, (state, new_name)).unwrap();
+                                    ret
+                                };
+                                unsafe {
+                                    register_modify_name(get_wasm_modify_name(&md_name_closure), &mut md_name_closure as *mut _ as *mut libc::c_void);
+                                }
+                                // ===== //
 
                                 // `unwrap()` everything here because we know the instance contains a
                                 // function export with the given name and signature because we're
@@ -725,7 +773,6 @@ impl<T> Linker<T> {
             }
             ModuleKind::Reactor => {
                 let instance = self.instantiate(&mut store, &module)?;
-
                 if let Some(export) = instance.get_export(&mut store, "_initialize") {
                     if let Extern::Func(func) = export {
                         func.typed::<(), (), _>(&store)
@@ -1295,4 +1342,55 @@ impl ModuleKind {
             }
         }
     }
+}
+
+use libc::c_void;
+
+#[link(name = "my-helpers")]
+#[allow(improper_ctypes)]
+extern "C" {
+    fn get_linear_memory(mem: *mut u8);
+    fn register_malloc(f: extern "C" fn (u32, *mut c_void) -> *mut c_void, mc: *mut c_void);
+    fn register_modify_age(f: extern "C" fn(i32, i32, i32, *mut c_void), fc: *mut c_void);
+    fn register_modify_name(f: extern "C" fn(i32, i32, i32, *mut c_void) -> i32, fc: *mut c_void);
+}
+
+extern "C" fn wasm_malloc<F>(size: u32, closure: *mut c_void) -> *mut c_void 
+where F: FnMut(u32) -> *mut c_void{
+    unsafe {
+        let cl = &mut *(closure as *mut F);
+        cl(size)
+    }
+}
+
+fn get_wasm_malloc<F>(_closure: &F) -> extern "C" fn (u32, *mut c_void) -> *mut c_void
+where F: FnMut(u32) -> *mut c_void
+{
+    wasm_malloc::<F>
+}
+
+extern "C" fn wasm_modfify_age<F>(offset: i32, state: i32, new_age: i32, closure: *mut c_void)
+where F: FnMut(i32, i32, i32) {
+    unsafe {
+        let cl = &mut *(closure as *mut F);
+        cl(offset, state, new_age)
+    }
+}
+
+fn get_wasm_modify_age<F>(_closure: &F) -> extern "C" fn(i32, i32, i32, *mut c_void)
+where F: FnMut(i32, i32, i32) {
+    wasm_modfify_age::<F>
+}
+
+extern "C" fn wasm_modfify_name<F>(offset: i32, state: i32, new_age: i32, closure: *mut c_void) -> i32
+where F: FnMut(i32, i32, i32) -> i32 {
+    unsafe {
+        let cl = &mut *(closure as *mut F);
+        cl(offset, state, new_age)
+    }
+}
+
+fn get_wasm_modify_name<F>(_closure: &F) -> extern "C" fn(i32, i32, i32, *mut c_void) -> i32
+where F: FnMut(i32, i32, i32) -> i32 {
+    wasm_modfify_name::<F>
 }

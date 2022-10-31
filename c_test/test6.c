@@ -6,18 +6,26 @@
 #include <stdlib.h>
 
 typedef struct {
+    int i[32];
+    char *name;
+} Name;
+
+typedef struct {
     int (*add)(int, int);
     void* (*my_malloc)(size_t);
 } FuncPointer;
 
 typedef struct {
+    Name name;
     FuncPointer fp;
 } FuncParam;
+
+
 
 int add_def(int a, int b) { return a + b; }
 void *my_malloc_def(size_t size) { return malloc(size); }
 
-extern void test6_func(FuncParam fp);
+extern void test6_func(void *op);
 // void test6_func(FuncParam fp) {
 //     printf("%d\n", fp.fp.add(1, 2));
 //     int *p = fp.fp.my_malloc(6);
@@ -27,10 +35,11 @@ extern void test6_func(FuncParam fp);
 extern void test6_func_2(int (*add)(int a, int b));
 
 int main() {
-    // FuncParam fp;
-    // fp.fp.add = add_def;
-    // fp.fp.my_malloc = my_malloc_def;
-    // test6_func(fp);
-    test6_func_2(add_def);
+    FuncParam *fp = malloc(sizeof(FuncParam));
+    fp->name.name = "Tom";
+    fp->fp.add = add_def;
+    fp->fp.my_malloc = my_malloc_def;
+    test6_func(fp);
+    //test6_func_2(add_def);
     return 0;
 }

@@ -1,10 +1,16 @@
 f=$1
 
-clang --target=wasm32-wasi \
+clang pub.c --target=wasm32-wasi \
 --sysroot ${WASI_SYSROOT} \
--emit-llvm -S -o ${f}.ll ${f}
+-emit-llvm -S -o pub.ll 
 
-llc -filetype obj ${f}.ll -o ${f}.o
+clang ${f} --target=wasm32-wasi \
+--sysroot ${WASI_SYSROOT} \
+-emit-llvm -S -o ${f}.ll 
+
+llvm-link ${f}.ll pub.ll -o ${f}.pub.ll
+
+llc -filetype obj ${f}.pub.ll -o ${f}.o
 
 wasm-ld ${f}.o \
 ${WASI_SYSROOT}/lib/wasm32-wasi/crt1-command.o \
@@ -18,5 +24,6 @@ ${WASI_SYSROOT}/lib/wasm32-wasi/crt1-command.o \
 --export-table
 
 rm *.ll *.o
+rm tests/*.ll tests/*.o
 
 

@@ -57,13 +57,18 @@ fn main() -> anyhow::Result<()> {
     
     // build helper.c
     let mut build = cc::Build::new();
-    build.warnings(true);
+    build.warnings(false);
     let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
     let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     build.define(&format!("CFG_TARGET_OS_{}", os), None);
     build.define(&format!("CFG_TARGET_ARCH_{}", arch), None);
-    println!("cargo:rerun-if-changed=src/commands/helper.c");
-    build.file("src/commands/helper.c");
+    let files = ["helper.c", "helper_funcpointer.c", "helper_callfunc.c", "helper_struct.c"];
+    for f in files {
+        build.file("src/commands/helper/".to_string() + f);
+        println!("{}", "cargo:rerun-if-changed=src/commands/helper/".to_string() + f);
+    }
+    println!("{}", "cargo:rerun-if-changed=src/commands/helper/".to_string() + "helper.h");
+    build.include("src/commands/helper/");
     build.compile("my-helpers");
 
     // Write out our auto-generated tests and opportunistically format them with
