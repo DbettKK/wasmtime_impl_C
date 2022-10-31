@@ -550,10 +550,6 @@ criteria = "safe-to-run"
 version = "0.3.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.openvino]]
-version = "0.4.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.openvino-finder]]
 version = "0.4.1"
 criteria = "safe-to-deploy"
@@ -577,10 +573,6 @@ criteria = "safe-to-deploy"
 [[exemptions.p256]]
 version = "0.9.0"
 criteria = "safe-to-deploy"
-
-[[exemptions.parity-wasm]]
-version = "0.42.2"
-criteria = "safe-to-run"
 
 [[exemptions.parking_lot]]
 version = "0.11.2"
@@ -1031,11 +1023,7 @@ version = "0.2.80"
 criteria = "safe-to-run"
 
 [[exemptions.wasmi]]
-version = "0.11.0"
-criteria = "safe-to-run"
-
-[[exemptions.wasmi-validation]]
-version = "0.4.1"
+version = "0.19.0"
 criteria = "safe-to-run"
 
 [[exemptions.web-sys]]

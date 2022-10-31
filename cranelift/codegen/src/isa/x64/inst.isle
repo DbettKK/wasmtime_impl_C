@@ -1089,12 +1089,6 @@
 (decl cc_invert (CC) CC)
 (extern constructor cc_invert cc_invert)
 
-(decl intcc_reverse (IntCC) IntCC)
-(extern constructor intcc_reverse intcc_reverse)
-
-(decl floatcc_inverse (FloatCC) FloatCC)
-(extern constructor floatcc_inverse floatcc_inverse)
-
 ;; Fails if the argument is not either CC.NZ or CC.Z.
 (decl cc_nz_or_z (CC) CC)
 (extern extractor cc_nz_or_z cc_nz_or_z)
@@ -2920,9 +2914,17 @@
 (decl x64_neg (Type Gpr) Gpr)
 (rule (x64_neg ty src)
       (let ((dst WritableGpr (temp_writable_gpr))
-            (size OperandSize (operand_size_of_type_32_64 ty))
+            (size OperandSize (raw_operand_size_of_type ty))
             (_ Unit (emit (MInst.Neg size src dst))))
         dst))
+
+;; Helper for creating `neg` instructions whose flags are also used.
+(decl x64_neg_paired (Type Gpr) ProducesFlags)
+(rule (x64_neg_paired ty src)
+      (let ((dst WritableGpr (temp_writable_gpr))
+            (size OperandSize (raw_operand_size_of_type ty))
+            (inst MInst (MInst.Neg size src dst)))
+        (ProducesFlags.ProducesFlagsReturnsResultWithConsumer inst dst)))
 
 (decl x64_lea (SyntheticAmode) Gpr)
 (rule (x64_lea addr)
