@@ -185,6 +185,7 @@ impl RunCommand {
         linker.func_wrap("env", "modify_fp", wrap_modify_fp)?;
         linker.func_wrap("env", "modify", wrap_modify)?;
         linker.func_wrap("env", "check_struct", wrap_check_struct)?;
+        linker.func_wrap("env", "test_memcpy", wrap_test_memcpy)?;
 
         populate_with_wasi(
             &mut store,
@@ -684,6 +685,15 @@ fn wrap_check_struct(mut caller: Caller<'_, Host>, c: i32){
         check_struct(c)
     }
 }
-
+// === //
+#[link(name = "my-helpers")]
+extern "C" {   
+    fn test_memcpy(dest: i32, src: i32, size: u32);
+}
+fn wrap_test_memcpy(dest: i32, src: i32, size: u32) {
+    unsafe {
+        test_memcpy(dest, src, size)    
+    }
+}
 
 

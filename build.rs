@@ -62,7 +62,7 @@ fn main() -> anyhow::Result<()> {
     let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     build.define(&format!("CFG_TARGET_OS_{}", os), None);
     build.define(&format!("CFG_TARGET_ARCH_{}", arch), None);
-    let files = ["helper.c", "helper_funcpointer.c", "helper_callfunc.c", "helper_struct.c"];
+    let files = ["helper.c", "helper_funcpointer.c", "helper_callfunc.c", "helper_struct.c", "helper_memcpy.c"];
     for f in files {
         build.file("src/commands/helper/".to_string() + f);
         println!("{}", "cargo:rerun-if-changed=src/commands/helper/".to_string() + f);
