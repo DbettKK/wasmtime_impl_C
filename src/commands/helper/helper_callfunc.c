@@ -51,7 +51,10 @@ int modify(int op, int md_name) {
     WasmFuncPointer fp = md->fp;
     WasmState ws = md->s;
     ma(fp.modfify_age, transfer_ptr_to_i32(&md->s), 31, modify_age_closure);
-    int ret_name = mn(fp.modify_get_name, transfer_ptr_to_i32(&md->s), md_name, modify_name_closure);
+    int ret_name = mn(
+        fp.modify_get_name, 
+        transfer_ptr_to_i32(&md->s), md_name, modify_name_closure
+    );
     return ret_name;
 }
 
