@@ -26,9 +26,9 @@ typedef struct REExecState {
     REExecStateEnum type : 8;
     uint8_t stack_len;
     int count; /* only used for RE_EXEC_STATE_GREEDY_QUANT */
-    int cptr;
-    int pc;
-    int buf[0];
+    int cptr; // const uint8_t *cptr;
+    int pc;   //const uint8_t *pc;
+    int buf[0]; //void *buf[0];
 } REExecState;
 
 typedef struct {
