@@ -282,10 +282,10 @@ intptr_t lre_exec_backtrack(
                             int* capture = transfer_i32_to_ptr(capture_wasm);
                             memcpy(capture, rs->buf, sizeof(capture[0]) * 2 * s->capture_count);
                             stack_len = rs->stack_len;
-                            //memcpy(stack, rs->buf + 2 * s->capture_count, stack_len * sizeof(stack[0]));
-                            for (int i = 0; i < stack_len; i++) {
-                                stack[i] = ((void **)transfer_i32_to_ptr(rs->buf + 2 * s->capture_count))[i];
-                            }
+                            memcpy(stack, rs->buf + 2 * s->capture_count, stack_len * sizeof(stack[0]));
+                            // for (int i = 0; i < stack_len; i++) {
+                            //     stack[i] = ((void **)transfer_i32_to_ptr(rs->buf + 2 * s->capture_count))[i];
+                            // }
                             pc = transfer_i32_to_ptr(rs->pc);
                             cptr = transfer_i32_to_ptr(rs->cptr);
                             /* go backward */
