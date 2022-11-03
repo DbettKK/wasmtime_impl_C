@@ -347,7 +347,8 @@ intptr_t lre_exec_backtrack(
                     pc = pc + (int)val;
                 }
                 int *capture = transfer_i32_to_ptr(capture_wasm);
-                ret = push_state(malloc_function_wasm, malloc_state_wasm, s, capture_wasm, 
+                ret = push_state(malloc_function_wasm, malloc_state_wasm, 
+                                 transfer_ptr_to_i32(s), capture_wasm, 
                                  transfer_ptr_to_i32(stack), stack_len,
                                  transfer_ptr_to_i32(pc1), transfer_ptr_to_i32(cptr), 
                                  RE_EXEC_STATE_SPLIT, 0);
@@ -359,7 +360,8 @@ intptr_t lre_exec_backtrack(
         case REOP_negative_lookahead:
             val = get_u32(pc);
             pc += 4;
-            ret = push_state(malloc_function_wasm, malloc_state_wasm, s, capture_wasm, 
+            ret = push_state(malloc_function_wasm, malloc_state_wasm, transfer_ptr_to_i32(s), 
+                             capture_wasm, 
                              transfer_ptr_to_i32(stack), stack_len,
                              transfer_ptr_to_i32(pc + (int)val), transfer_ptr_to_i32(cptr),
                              RE_EXEC_STATE_LOOKAHEAD + opcode - REOP_lookahead,
@@ -628,7 +630,9 @@ intptr_t lre_exec_backtrack(
                     goto no_match;
                 if (q > quant_min) {
                     /* will examine all matches down to quant_min */
-                    ret = push_state(malloc_function_wasm, malloc_state_wasm, s, capture, 
+                    ret = push_state(malloc_function_wasm, malloc_state_wasm,  
+                                     transfer_ptr_to_i32(s), 
+                                     transfer_ptr_to_i32(capture), 
                                      transfer_ptr_to_i32(stack), stack_len,
                                      transfer_ptr_to_i32(pc1 - 16), transfer_ptr_to_i32(cptr),
                                      RE_EXEC_STATE_GREEDY_QUANT,
