@@ -552,6 +552,7 @@ fn ctx_set_listenfd(num_fd: usize, builder: WasiCtxBuilder) -> Result<(usize, Wa
     Ok((num_fd, builder))
 }
 
+#[link(name = "my-helpers")]
 extern "C" {
     fn my_lre_realloc(mf: i32, state: i32, ptr: i32, size: u32) -> i32;
     fn push_state(mf: i32, state: i32, s: i32, 

@@ -1397,7 +1397,6 @@ where F: FnMut(*mut c_void) {
 }
 
 // == relative == //
-
 extern "C" {
     fn register_wasm_js_realloc(
         f: extern "C" fn(i32, i32, i32, u32, *mut c_void) -> i32,  
