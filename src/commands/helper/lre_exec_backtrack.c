@@ -614,7 +614,8 @@ intptr_t lre_exec_backtrack(
                 
                 q = 0;
                 for(;;) {
-                    res = lre_exec_backtrack(malloc_function_wasm, malloc_state_wasm, s, capture, 
+                    res = lre_exec_backtrack(malloc_function_wasm, malloc_state_wasm, 
+                                             transfer_ptr_to_i32(s), transfer_ptr_to_i32(capture), 
                                              transfer_ptr_to_i32(stack), stack_len,
                                              transfer_ptr_to_i32(pc1), transfer_ptr_to_i32(cptr), TRUE);
                     if (res == -1)
