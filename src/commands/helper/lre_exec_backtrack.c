@@ -80,16 +80,122 @@ void register_wasm_lre_case_conv(wasm_lre_case_conv func, void* mc) {
     lre_case_conv_cl = mc;
 }
 
+int lre_case_conv(uint32_t *res, uint32_t c, int conv_type)
+{
+    if (c < 128) {
+        if (conv_type) {
+            if (c >= 'A' && c <= 'Z') {
+                c = c - 'A' + 'a';
+            }
+        } else {
+            if (c >= 'a' && c <= 'z') {
+                c = c - 'a' + 'A';
+            }
+        }
+    } else {
+        uint32_t v, code, data, type, len, a, is_lower;
+        int idx, idx_min, idx_max;
+        
+        is_lower = (conv_type != 0);
+        idx_min = 0;
+        idx_max = countof(case_conv_table1) - 1;
+        while (idx_min <= idx_max) {
+            idx = (unsigned)(idx_max + idx_min) / 2;
+            v = case_conv_table1[idx];
+            code = v >> (32 - 17);
+            len = (v >> (32 - 17 - 7)) & 0x7f;
+            if (c < code) {
+                idx_max = idx - 1;
+            } else if (c >= code + len) {
+                idx_min = idx + 1;
+            } else {
+                type = (v >> (32 - 17 - 7 - 4)) & 0xf;
+                data = ((v & 0xf) << 8) | case_conv_table2[idx];
+                switch(type) {
+                case RUN_TYPE_U:
+                case RUN_TYPE_L:
+                case RUN_TYPE_UF:
+                case RUN_TYPE_LF:
+                    if (conv_type == (type & 1) ||
+                        (type >= RUN_TYPE_UF && conv_type == 2)) {
+                        c = c - code + (case_conv_table1[data] >> (32 - 17));
+                    }
+                    break;
+                case RUN_TYPE_UL:
+                    a = c - code;
+                    if ((a & 1) != (1 - is_lower))
+                        break;
+                    c = (a ^ 1) + code;
+                    break;
+                case RUN_TYPE_LSU:
+                    a = c - code;
+                    if (a == 1) {
+                        c += 2 * is_lower - 1;
+                    } else if (a == (1 - is_lower) * 2) {
+                        c += (2 * is_lower - 1) * 2;
+                    }
+                    break;
+                case RUN_TYPE_U2L_399_EXT2:
+                    if (!is_lower) {
+                        res[0] = c - code + case_conv_ext[data >> 6];
+                        res[1] = 0x399;
+                        return 2;
+                    } else {
+                        c = c - code + case_conv_ext[data & 0x3f];
+                    }
+                    break;
+                case RUN_TYPE_UF_D20:
+                    if (conv_type == 1)
+                        break;
+                    c = data + (conv_type == 2) * 0x20;
+                    break;
+                case RUN_TYPE_UF_D1_EXT:
+                    if (conv_type == 1)
+                        break;
+                    c = case_conv_ext[data] + (conv_type == 2);
+                    break;
+                case RUN_TYPE_U_EXT:
+                case RUN_TYPE_LF_EXT:
+                    if (is_lower != (type - RUN_TYPE_U_EXT))
+                        break;
+                    c = case_conv_ext[data];
+                    break;
+                case RUN_TYPE_U_EXT2:
+                case RUN_TYPE_L_EXT2:
+                    if (conv_type != (type - RUN_TYPE_U_EXT2))
+                        break;
+                    res[0] = c - code + case_conv_ext[data >> 6];
+                    res[1] = case_conv_ext[data & 0x3f];
+                    return 2;
+                default:
+                case RUN_TYPE_U_EXT3:
+                    if (conv_type != 0)
+                        break;
+                    res[0] = case_conv_ext[data >> 8];
+                    res[1] = case_conv_ext[(data >> 4) & 0xf];
+                    res[2] = case_conv_ext[data & 0xf];
+                    return 3;
+                }
+                break;
+            }
+        }
+    }
+    res[0] = c;
+    return 1;
+}
+
+
 uint32_t lre_canonicalize(uint32_t c, BOOL is_utf16) {
-    uint32_t* res = malloc(sizeof(uint32_t) * 3);
-    int res_wasm = transfer_ptr_to_i32(res);
+    uint32_t res[3];
+    //uint32_t* res = malloc(sizeof(uint32_t) * 3);
+    //int res_wasm = transfer_ptr_to_i32(res);
     int len;
     if (is_utf16) {
         if (likely(c < 128)) {
             if (c >= 'A' && c <= 'Z')
                 c = c - 'A' + 'a';
         } else {
-            lre_case_conv_func(res_wasm, c, 2, lre_case_conv_cl);
+            lre_case_conv(res, c, 2);
             c = res[0];
         }
     } else {
@@ -98,18 +204,20 @@ uint32_t lre_canonicalize(uint32_t c, BOOL is_utf16) {
                 c = c - 'a' + 'A';
         } else {
             /* legacy regexp: to upper case if single char >= 128 */
-            len = lre_case_conv_func(res_wasm, c, FALSE, lre_case_conv_cl);
+            len = lre_case_conv(res, c, FALSE);
             if (len == 1 && res[0] >= 128)
                 c = res[0];
         }
     }
-    free(res);
+    //free(res);
     return c;
 }
 
 
 
 intptr_t lre_exec_backtrack(
+    int malloc_function_wasm,
+    int malloc_state_wasm,
     int s_wasm,
     int capture_wasm, // uint8_t **capture,
     int stack_wasm, // StackInt *stack, 
@@ -151,10 +259,11 @@ intptr_t lre_exec_backtrack(
                     if (rs->type == RE_EXEC_STATE_SPLIT) {
                         if (!ret) {
                         pop_state:
-                           // memcpy(capture, rs->buf, sizeof(capture[0]) * 2 * s->capture_count);
-                            int* capture = transfer_i32_to_ptr(capture_wasm);
-                            for(int i = 0; i < 2 * s->capture_count; i++)
-                                capture[i] = rs->buf[i];
+                            //memcpy(transfer_i32_to_ptr(capture_wasm), rs->buf, sizeof(int) * 2 * s->capture_count);
+                            //int* capture = transfer_i32_to_ptr(capture_wasm);
+                            for(int i = 0; i < 2 * s->capture_count; i++) {
+                                ((int*)transfer_i32_to_ptr(capture_wasm))[i] = rs->buf[i];
+                            }
                         pop_state1:
                             pc = transfer_i32_to_ptr(rs->pc);
                             cptr = transfer_i32_to_ptr(rs->cptr);
@@ -162,7 +271,7 @@ intptr_t lre_exec_backtrack(
                             // memcpy(stack, rs->buf + 2 * s->capture_count, stack_len * sizeof(stack[0]));
                             // todo: need handle rs->buf?
                             for (int i = 0; i < stack_len; i++) {
-                                stack[i] = (rs->buf + 2 * s->capture_count)[i];
+                                stack[i] = ((void **)transfer_i32_to_ptr(rs->buf + 2 * s->capture_count))[i];
                             }
                             s->state_stack_len--;
                             break;
@@ -170,15 +279,19 @@ intptr_t lre_exec_backtrack(
                     } else if (rs->type == RE_EXEC_STATE_GREEDY_QUANT) {
                         if (!ret) {
                             uint32_t char_count, i;
+                            int* capture = transfer_i32_to_ptr(capture_wasm);
                             memcpy(capture, rs->buf, sizeof(capture[0]) * 2 * s->capture_count);
                             stack_len = rs->stack_len;
-                            memcpy(stack, rs->buf + 2 * s->capture_count, stack_len * sizeof(stack[0]));
-                            pc = rs->pc;
-                            cptr = rs->cptr;
+                            //memcpy(stack, rs->buf + 2 * s->capture_count, stack_len * sizeof(stack[0]));
+                            for (int i = 0; i < stack_len; i++) {
+                                stack[i] = ((void **)transfer_i32_to_ptr(rs->buf + 2 * s->capture_count))[i];
+                            }
+                            pc = transfer_i32_to_ptr(rs->pc);
+                            cptr = transfer_i32_to_ptr(rs->cptr);
                             /* go backward */
                             char_count = get_u32(pc + 12);
                             for(i = 0; i < char_count; i++) {
-                                PREV_CHAR(cptr, s->cbuf);
+                                PREV_CHAR(cptr, transfer_i32_to_ptr(s->cbuf));
                             }
                             pc = (pc + 16) + (int)get_u32(pc);
                             rs->cptr = cptr;
@@ -233,8 +346,11 @@ intptr_t lre_exec_backtrack(
                     pc1 = pc;
                     pc = pc + (int)val;
                 }
-                ret = push_state(s, capture, stack, stack_len,
-                                 pc1, cptr, RE_EXEC_STATE_SPLIT, 0);
+                int *capture = transfer_i32_to_ptr(capture_wasm);
+                ret = push_state(malloc_function_wasm, malloc_state_wasm, s, capture_wasm, 
+                                 transfer_ptr_to_i32(stack), stack_len,
+                                 transfer_ptr_to_i32(pc1), transfer_ptr_to_i32(cptr), 
+                                 RE_EXEC_STATE_SPLIT, 0);
                 if (ret < 0)
                     return -1;
                 break;
@@ -243,8 +359,9 @@ intptr_t lre_exec_backtrack(
         case REOP_negative_lookahead:
             val = get_u32(pc);
             pc += 4;
-            ret = push_state(s, capture, stack, stack_len,
-                             pc + (int)val, cptr,
+            ret = push_state(malloc_function_wasm, malloc_state_wasm, s, capture_wasm, 
+                             transfer_ptr_to_i32(stack), stack_len,
+                             transfer_ptr_to_i32(pc + (int)val), transfer_ptr_to_i32(cptr),
                              RE_EXEC_STATE_LOOKAHEAD + opcode - REOP_lookahead,
                              0);
             if (ret < 0)
@@ -256,11 +373,11 @@ intptr_t lre_exec_backtrack(
             pc += 4 + (int)val;
             break;
         case REOP_line_start:
-            if (cptr == s->cbuf)
+            if (cptr == transfer_i32_to_ptr(s->cbuf))
                 break;
             if (!s->multi_line)
                 goto no_match;
-            PEEK_PREV_CHAR(c, cptr, s->cbuf);
+            PEEK_PREV_CHAR(c, cptr, transfer_i32_to_ptr(s->cbuf));
             if (!is_line_terminator(c))
                 goto no_match;
             break;
@@ -289,7 +406,8 @@ intptr_t lre_exec_backtrack(
         case REOP_save_end:
             val = *pc++;
             assert(val < s->capture_count);
-            capture[2 * val + opcode - REOP_save_start] = (uint8_t *)cptr;
+            int *capture = transfer_i32_to_ptr(capture_wasm);
+            capture[2 * val + opcode - REOP_save_start] = transfer_ptr_to_i32(cptr);
             break;
         case REOP_save_reset:
             {
@@ -334,10 +452,10 @@ intptr_t lre_exec_backtrack(
             {
                 BOOL v1, v2;
                 /* char before */
-                if (cptr == s->cbuf) {
+                if (cptr == transfer_i32_to_ptr(s->cbuf)) {
                     v1 = FALSE;
                 } else {
-                    PEEK_PREV_CHAR(c, cptr, s->cbuf);
+                    PEEK_PREV_CHAR(c, cptr, transfer_i32_to_ptr(s->cbuf));
                     v1 = is_word_char(c);
                 }
                 /* current char */
@@ -360,8 +478,8 @@ intptr_t lre_exec_backtrack(
                 val = *pc++;
                 if (val >= s->capture_count)
                     goto no_match;
-                cptr1_start = capture[2 * val];
-                cptr1_end = capture[2 * val + 1];
+                cptr1_start = transfer_i32_to_ptr(capture[2 * val]);
+                cptr1_end = transfer_i32_to_ptr(capture[2 * val + 1]);
                 if (!cptr1_start || !cptr1_end)
                     break;
                 if (opcode == REOP_back_reference) {
@@ -381,10 +499,10 @@ intptr_t lre_exec_backtrack(
                 } else {
                     cptr1 = cptr1_end;
                     while (cptr1 > cptr1_start) {
-                        if (cptr == s->cbuf)
+                        if (cptr == transfer_i32_to_ptr(s->cbuf))
                             goto no_match;
                         GET_PREV_CHAR(c1, cptr1, cptr1_start);
-                        GET_PREV_CHAR(c2, cptr, s->cbuf);
+                        GET_PREV_CHAR(c2, cptr, transfer_i32_to_ptr(s->cbuf));
                         if (s->ignore_case) {
                             c1 = lre_canonicalize(c1, s->is_utf16);
                             c2 = lre_canonicalize(c2, s->is_utf16);
@@ -474,9 +592,9 @@ intptr_t lre_exec_backtrack(
             break;
         case REOP_prev:
             /* go to the previous char */
-            if (cptr == s->cbuf)
+            if (cptr == transfer_i32_to_ptr(s->cbuf))
                 goto no_match;
-            PREV_CHAR(cptr, s->cbuf);
+            PREV_CHAR(cptr, transfer_i32_to_ptr(s->cbuf));
             break;
         case REOP_simple_greedy_quant:
             {
@@ -494,8 +612,9 @@ intptr_t lre_exec_backtrack(
                 
                 q = 0;
                 for(;;) {
-                    res = lre_exec_backtrack(s, capture, stack, stack_len,
-                                             pc1, cptr, TRUE);
+                    res = lre_exec_backtrack(malloc_function_wasm, malloc_state_wasm, s, capture, 
+                                             transfer_ptr_to_i32(stack), stack_len,
+                                             transfer_ptr_to_i32(pc1), transfer_ptr_to_i32(cptr), TRUE);
                     if (res == -1)
                         return res;
                     if (!res)
@@ -509,8 +628,9 @@ intptr_t lre_exec_backtrack(
                     goto no_match;
                 if (q > quant_min) {
                     /* will examine all matches down to quant_min */
-                    ret = push_state(s, capture, stack, stack_len,
-                                     pc1 - 16, cptr,
+                    ret = push_state(malloc_function_wasm, malloc_state_wasm, s, capture, 
+                                     transfer_ptr_to_i32(stack), stack_len,
+                                     transfer_ptr_to_i32(pc1 - 16), transfer_ptr_to_i32(cptr),
                                      RE_EXEC_STATE_GREEDY_QUANT,
                                      q - quant_min);
                     if (ret < 0)

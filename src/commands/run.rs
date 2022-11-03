@@ -183,6 +183,7 @@ impl RunCommand {
         linker.func_wrap("env", "my_lre_realloc", wrap_my_lre_realloc)?;
         linker.func_wrap("env", "my_push_state", wrap_my_push_state)?;
         linker.func_wrap("env", "lre_canonicalize", wrap_lre_canonicalize)?;
+        linker.func_wrap("env", "my_lre_exec_backtrack", wrap_lre_exec_backtrack)?;
 
         populate_with_wasi(
             &mut store,
@@ -562,6 +563,17 @@ extern "C" {
         t: i32,
         count: u32) -> i32;
     fn lre_canonicalize(c: u32, is_utf16: i32) -> u32;
+    fn lre_exec_backtrack(
+        mf: i32,
+        state: i32,
+        s: i32,
+        capture_wasm: i32,
+        stack_wasm: i32,
+        stack_len: u32,
+        pc_wasm: i32, 
+        cptr_wasm: i32,
+        no_recurse: i32,
+    ) -> i32;
 }
 
 fn wrap_my_lre_realloc(mf: i32, state: i32, ptr: i32, size: u32) -> i32 {
@@ -584,6 +596,21 @@ fn wrap_my_push_state(
 ) -> i32 {
     unsafe {
         push_state(mf, state, s, capture_wasm, stack_wasm, stack_len, pc_wasm, cptr_wasm, t, count)
+    }
+}
+
+fn wrap_lre_exec_backtrack(mf: i32, 
+    state: i32, 
+    s: i32, 
+    capture_wasm: i32,
+    stack_wasm: i32,
+    stack_len: u32,
+    pc_wasm: i32, 
+    cptr_wasm: i32,
+    no_recurse: i32,
+) -> i32 {
+    unsafe {
+        lre_exec_backtrack(mf, state, s, capture_wasm, stack_wasm, stack_len, pc_wasm, cptr_wasm, no_recurse)
     }
 }
 
