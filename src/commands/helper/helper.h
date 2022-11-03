@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-char *linear_memory;
+extern char *linear_memory;
 
 void get_linear_memory(char *mem);
 
@@ -15,18 +15,18 @@ int transfer_ptr_to_i32(void *ptr);
 
 void* call_func(int func_offset, int argc, void **argv);
 
-void* glob_ctx;
+extern void* glob_ctx;
 
 typedef void* (*wasm_malloc)(size_t size, void* ctx);
 typedef void* (*wasm_realloc)(void* ptr, size_t size, void* ctx);
 typedef void (*wasm_free)(void* ptr, void* ctx);
 
-wasm_malloc glob_malloc;
-wasm_realloc glob_realloc;
-wasm_free glob_free;
+extern wasm_malloc glob_malloc;
+extern wasm_realloc glob_realloc;
+extern wasm_free glob_free;
 
-void* malloc_cl;
-void* free_cl;
+extern void* malloc_cl;
+extern void* free_cl;
 
 void register_ctx(void* ctx);
 void register_malloc(wasm_malloc func, void* mc);

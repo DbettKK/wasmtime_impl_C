@@ -3,6 +3,14 @@
 
 #include "helper.h"
 
+wasm_malloc glob_malloc;
+wasm_realloc glob_realloc;
+wasm_free glob_free;
+void* malloc_cl;
+void* free_cl;
+void* glob_ctx;
+char *linear_memory;
+
 void get_linear_memory(char *mem) {
     linear_memory = mem;
 }
