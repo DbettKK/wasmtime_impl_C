@@ -294,7 +294,7 @@ intptr_t lre_exec_backtrack(
                                 PREV_CHAR(cptr, transfer_i32_to_ptr(s->cbuf));
                             }
                             pc = (pc + 16) + (int)get_u32(pc);
-                            rs->cptr = cptr;
+                            rs->cptr = transfer_ptr_to_i32(cptr);
                             rs->count--;
                             if (rs->count == 0) {
                                 s->state_stack_len--;
