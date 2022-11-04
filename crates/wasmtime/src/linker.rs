@@ -706,14 +706,15 @@ impl<T> Linker<T> {
                             move |mut caller, params, results| {
                                 // Create a new instance for this command execution.
                                 let instance = instance_pre.instantiate(&mut caller)?;
-                                unsafe {
-                                    // 将linear_memory对应的基地址传递给helper
-                                    get_linear_memory(instance.get_memory(&mut caller, "memory").unwrap()
-                                            .data_mut(&mut caller).as_mut_ptr());
-                                }
                                 let linear_memory = instance.get_memory(&mut caller, "memory").unwrap()
                                             .data_mut(&mut caller).as_mut_ptr();
-
+                                let table = instance.get_table(&mut caller, "__indirect_function_table").unwrap();
+                                
+                                unsafe {
+                                    // 将linear_memory对应的基地址传递给helper
+                                    get_linear_memory(linear_memory);
+                                }
+                                
                                 // 定义闭包调用函数
                                 let mut closure = |size: u32| -> *mut c_void {
                                     let my_malloc = instance.get_func(&mut caller, "my_malloc").unwrap()
@@ -741,22 +742,9 @@ impl<T> Linker<T> {
                                 unsafe {
                                     register_free(get_wasm_free(&free_c), &mut free_c as *mut _ as *mut c_void);
                                 }
-                                
-                                let mut lre_case_conv_closure = |res: i32, c: u32, conv_type: i32| -> i32 {
-                                    let lre_case_conv = instance.get_func(&mut caller, "lre_case_conv").unwrap()
-                                        .typed::<(i32, u32, i32), i32, _>(&caller).unwrap();
-                                    let ret = lre_case_conv.call(&mut caller, (res, c, conv_type)).unwrap();
-                                    ret
-                                };
-                                unsafe {
-                                    register_wasm_lre_case_conv(get_wasm_lre_case_conv(&lre_case_conv_closure), 
-                                            &mut lre_case_conv_closure as *mut _ as *mut libc::c_void);
-                                }
 
                                 let mut realloc_closure = |table_index: i32, state: i32, ptr: i32, size: u32| -> i32 {
-                                    let val = instance.get_table(&mut caller, "__indirect_function_table")
-                                                        .unwrap().get(&mut caller, table_index as u32)
-                                                        .unwrap();
+                                    let val = table.get(&mut caller, table_index as u32).unwrap();
                                     let f = val.funcref().unwrap().unwrap()
                                                       .typed::<(i32, i32, u32), i32, _>(&mut caller).unwrap();
                                     let ret = f.call(&mut caller, (state, ptr, size)).unwrap();
@@ -1401,10 +1389,6 @@ extern "C" {
         f: extern "C" fn(i32, i32, i32, u32, *mut c_void) -> i32,  
         cl: *mut c_void
     );
-    fn register_wasm_lre_case_conv(
-        f: extern "C" fn(i32, u32, i32, *mut c_void) -> i32,
-        cl: *mut c_void
-    );
 }
 
 extern "C" fn wasm_js_realloc<F>(table_index: i32, state: i32, ptr: i32, size: u32, closure: *mut c_void) -> i32 
@@ -1418,17 +1402,4 @@ where F: FnMut(i32, i32, i32, u32) -> i32 {
 fn get_wasm_js_realloc<F>(_closure: &F) -> extern "C" fn(i32, i32, i32, u32, *mut c_void) -> i32
 where F: FnMut(i32, i32, i32, u32) -> i32 {
     wasm_js_realloc::<F>
-}
-
-extern "C" fn wasm_lre_case_conv<F>(res: i32, c: u32, conv_type: i32, closure: *mut c_void) -> i32 
-where F: FnMut(i32, u32, i32) -> i32 {
-    unsafe {
-        let cl = &mut *(closure as *mut F);
-        cl(res, c, conv_type)
-    }
-}
-
-fn get_wasm_lre_case_conv<F>(_closure: &F) -> extern "C" fn(i32, u32, i32, *mut c_void) -> i32
-where F: FnMut(i32, u32, i32) -> i32 {
-    wasm_lre_case_conv::<F>
 }
