@@ -711,14 +711,15 @@ impl<T> Linker<T> {
                                     get_linear_memory(instance.get_memory(&mut caller, "memory").unwrap()
                                             .data_mut(&mut caller).as_mut_ptr());
                                 }
+                                let linear_memory = instance.get_memory(&mut caller, "memory").unwrap()
+                                            .data_mut(&mut caller).as_mut_ptr();
 
                                 // 定义闭包调用函数
                                 let mut closure = |size: u32| -> *mut c_void {
                                     let my_malloc = instance.get_func(&mut caller, "my_malloc").unwrap()
                                         .typed::<u32, u32, _>(&caller).unwrap();
                                     let ret = my_malloc.call(&mut caller, size).unwrap();
-                                    let linear_memory = instance.get_memory(&mut caller, "memory").unwrap()
-                                            .data_mut(&mut caller).as_mut_ptr();
+                                    
                                     unsafe {
                                         linear_memory.add(ret as usize).cast()
                                     }
@@ -731,8 +732,6 @@ impl<T> Linker<T> {
                                 let mut free_c = |ptr: *mut c_void| {
                                     let my_free = instance.get_func(&mut caller, "my_free").unwrap()
                                         .typed::<i32, (), _>(&caller).unwrap();
-                                    let linear_memory = instance.get_memory(&mut caller, "memory").unwrap()
-                                            .data_mut(&mut caller).as_mut_ptr();
                                     unsafe {
                                         let ptr_offset = (ptr as *mut u8).offset_from(linear_memory) as i32;
                                         my_free.call(&mut caller, ptr_offset).unwrap();

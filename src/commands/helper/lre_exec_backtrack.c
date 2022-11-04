@@ -187,8 +187,6 @@ int lre_case_conv(uint32_t *res, uint32_t c, int conv_type)
 
 uint32_t lre_canonicalize(uint32_t c, BOOL is_utf16) {
     uint32_t res[3];
-    //uint32_t* res = malloc(sizeof(uint32_t) * 3);
-    //int res_wasm = transfer_ptr_to_i32(res);
     int len;
     if (is_utf16) {
         if (likely(c < 128)) {
@@ -209,7 +207,6 @@ uint32_t lre_canonicalize(uint32_t c, BOOL is_utf16) {
                 c = res[0];
         }
     }
-    //free(res);
     return c;
 }
 
