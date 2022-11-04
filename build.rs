@@ -55,7 +55,7 @@ fn main() -> anyhow::Result<()> {
         writeln!(out, "}}")?;
     }
 
-    // build my-helpers
+    //build my-helpers
     let mut build = cc::Build::new();
     build.warnings(false);
     let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
@@ -72,6 +72,9 @@ fn main() -> anyhow::Result<()> {
     println!("{}", "cargo:rerun-if-changed=src/commands/helper/".to_string() + "lre_exec_backtrack.h");
     build.include("src/commands/helper/");
     build.compile("my-helpers");
+
+    // println!("cargo:rustc-link-search=/home/zhk/proj/wasmtime_impl_C/src/commands/helper");
+    // println!("cargo:rustc-link-lib=qjs");
 
     // Write out our auto-generated tests and opportunistically format them with
     // `rustfmt` if it's installed.
