@@ -13,10 +13,20 @@ void register_wasm_js_realloc(wasm_js_realloc func, void* closure) {
     wasm_js_realloc_closure = closure;
 }
 // == end == //
+// == realloc fp == //
+typedef int (*wasm_js_realloc_def)(int state, int ptr, int size, char* closure);
+wasm_js_realloc_def jrd;
+void* wasm_js_realloc_def_closure;
+void register_wasm_js_realloc_def(wasm_js_realloc_def func, void* closure) {
+    jrd = func;
+    wasm_js_realloc_def_closure = closure;
+}
+// == end == //
 
 int my_lre_realloc(int m, int s, int ptr, size_t size) {
     JSMallocFunctions *mf = transfer_i32_to_ptr(m);
-    return jr(mf->js_realloc, s, ptr, size, wasm_js_realloc_closure);
+    //return jr(mf->js_realloc, s, ptr, size, wasm_js_realloc_closure);
+    return jrd(s, ptr, size, wasm_js_realloc_def_closure);
     //return mf.js_realloc(s, ptr, size);
 }
 

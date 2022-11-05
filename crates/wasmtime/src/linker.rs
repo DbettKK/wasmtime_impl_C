@@ -16,6 +16,8 @@ use std::marker;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use std::time::{Duration, Instant};
+
 /// Structure used to link wasm modules/instances together.
 ///
 /// This structure is used to assist in instantiating a [`Module`]. A [`Linker`]
@@ -744,15 +746,30 @@ impl<T> Linker<T> {
                                 }
 
                                 let mut realloc_closure = |table_index: i32, state: i32, ptr: i32, size: u32| -> i32 {
+                                    let start_time = Instant::now();
                                     let val = table.get(&mut caller, table_index as u32).unwrap();
                                     let f = val.funcref().unwrap().unwrap()
                                                       .typed::<(i32, i32, u32), i32, _>(&mut caller).unwrap();
+                                    let duration = start_time.elapsed();
+                                    println!("time1: {:?}", duration);
                                     let ret = f.call(&mut caller, (state, ptr, size)).unwrap();
+                                    let duration = start_time.elapsed();
+                                    println!("time2: {:?}", duration);
                                     ret
                                 };
                                 unsafe {
                                     register_wasm_js_realloc(get_wasm_js_realloc(&mut realloc_closure), 
                                         &mut realloc_closure as *mut _ as *mut c_void);
+                                }
+
+                                let js_def_realloc = instance.get_func(&mut caller, "js_def_realloc").unwrap()
+                                                        .typed::<(i32, i32, i32), i32, _>(&mut caller).unwrap();
+                                let mut js_def_realloc_c = |m: i32, ptr: i32, size: i32| -> i32 {
+                                    js_def_realloc.call(&mut caller, (m, ptr, size)).unwrap()
+                                };
+                                unsafe {
+                                    register_wasm_js_realloc_def(get_wasm_js_realloc_def(&mut js_def_realloc_c), 
+                                        &mut js_def_realloc_c as *mut _ as *mut c_void)
                                 }
 
                                 // `unwrap()` everything here because we know the instance contains a
@@ -1389,6 +1406,10 @@ extern "C" {
         f: extern "C" fn(i32, i32, i32, u32, *mut c_void) -> i32,  
         cl: *mut c_void
     );
+    fn register_wasm_js_realloc_def(
+        f: extern "C" fn(i32, i32, i32, *mut c_void) -> i32,  
+        cl: *mut c_void
+    );
 }
 
 extern "C" fn wasm_js_realloc<F>(table_index: i32, state: i32, ptr: i32, size: u32, closure: *mut c_void) -> i32 
@@ -1402,4 +1423,17 @@ where F: FnMut(i32, i32, i32, u32) -> i32 {
 fn get_wasm_js_realloc<F>(_closure: &F) -> extern "C" fn(i32, i32, i32, u32, *mut c_void) -> i32
 where F: FnMut(i32, i32, i32, u32) -> i32 {
     wasm_js_realloc::<F>
+}
+
+extern "C" fn wasm_js_realloc_def<F>(state: i32, ptr: i32, size: i32, closure: *mut c_void) -> i32 
+where F: FnMut(i32, i32, i32) -> i32 {
+    unsafe {
+        let cl = &mut *(closure as *mut F);
+        cl(state, ptr, size)
+    }
+}
+
+fn get_wasm_js_realloc_def<F>(_closure: &F) -> extern "C" fn(i32, i32, i32, *mut c_void) -> i32
+where F: FnMut(i32, i32, i32) -> i32 {
+    wasm_js_realloc_def::<F>
 }
