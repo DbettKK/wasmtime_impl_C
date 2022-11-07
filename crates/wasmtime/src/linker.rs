@@ -746,16 +746,10 @@ impl<T> Linker<T> {
                                 }
 
                                 let mut realloc_closure = |table_index: i32, state: i32, ptr: i32, size: u32| -> i32 {
-                                    let start_time = Instant::now();
                                     let val = table.get(&mut caller, table_index as u32).unwrap();
                                     let f = val.funcref().unwrap().unwrap()
                                                       .typed::<(i32, i32, u32), i32, _>(&mut caller).unwrap();
-                                    let duration = start_time.elapsed();
-                                    println!("time1: {:?}", duration);
-                                    let ret = f.call(&mut caller, (state, ptr, size)).unwrap();
-                                    let duration = start_time.elapsed();
-                                    println!("time2: {:?}", duration);
-                                    ret
+                                    f.call(&mut caller, (state, ptr, size)).unwrap()
                                 };
                                 unsafe {
                                     register_wasm_js_realloc(get_wasm_js_realloc(&mut realloc_closure), 
@@ -1425,6 +1419,7 @@ where F: FnMut(i32, i32, i32, u32) -> i32 {
     wasm_js_realloc::<F>
 }
 
+#[no_mangle]
 extern "C" fn wasm_js_realloc_def<F>(state: i32, ptr: i32, size: i32, closure: *mut c_void) -> i32 
 where F: FnMut(i32, i32, i32) -> i32 {
     unsafe {
