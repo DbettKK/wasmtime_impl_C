@@ -24,8 +24,8 @@ void register_wasm_js_realloc_def(wasm_js_realloc_def func, void* closure) {
 // == end == //
 
 int my_lre_realloc(int m, int s, int ptr, size_t size) {
-    JSMallocFunctions *mf = transfer_i32_to_ptr(m);
-    //return jr(mf->js_realloc, s, ptr, size, wasm_js_realloc_closure);
+    //JSMallocFunctions *mf = transfer_i32_to_ptr(m);
+    //return jr(((JSMallocFunctions *)transfer_i32_to_ptr(m))->js_realloc, s, ptr, size, wasm_js_realloc_closure);
     return jrd(s, ptr, size, wasm_js_realloc_def_closure);
     //return mf.js_realloc(s, ptr, size);
 }
