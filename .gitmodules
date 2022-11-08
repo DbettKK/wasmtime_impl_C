@@ -13,3 +13,6 @@
 [submodule "crates/wasi-crypto/spec"]
 	path = crates/wasi-crypto/spec
 	url = https://github.com/WebAssembly/wasi-crypto.git
+[submodule "wasm_qjs_helper"]
+	path = wasm_qjs_helper
+	url = https://github.com/DbettKK/wasm_qjs_helper
